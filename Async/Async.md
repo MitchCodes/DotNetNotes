@@ -86,7 +86,6 @@ private async Task BackgroundProcessAsync(CancellationToken cancellationToken)
 await Task.WhenAll(new List<Task>() { BackgroundTask });
 ```
 
-
 ## ExecutionContext and SynchronizationContext
 
 ### ExecutionContext
