@@ -4,6 +4,7 @@ Asynchronous programming is a method that allows for more responsive application
 
 If you are familiar with async programming already and are looking for best practices / important things to remember, refer to [the Best Practice / Takeaways section](#best-practice--takeaways).
 
+
 ## Resources
 
 ### [Asynchronous Programming in C#](https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/)
@@ -21,8 +22,12 @@ This article Stephen Toub delves into the distinctions between ExecutionContext 
 ### [Brownfield Async Development](https://learn.microsoft.com/en-us/archive/msdn-magazine/2015/july/async-programming-brownfield-async-development)
 Stephen Cleary (not to be confused with Stephen Toub) discusses strategies for introducing asynchronous programming into existing ("[brownfield](https://synoptek.com/insights/it-blogs/greenfield-vs-brownfield-software-development/)") .NET applications. The article covers techniques for transforming synchronous code to asynchronous, dealing with potential issues, and tips for maintaining readability and maintainability during the transition. The article provides multiple 'hacks', as they call it, for accomplishing this.
 
+### [How Async/Await Really Works in C#](https://devblogs.microsoft.com/dotnet/how-async-await-really-works/)
+An in-depth and lengthy article by Stephen (Toub this time) that goes into detail about how the async/await keywords work under the hood. Some advanced concepts in here and talking about the history of async programming in .NET.
+
 ### [StephenCleary's AsyncEx Library](https://github.com/StephenCleary/AsyncEx/blob/master/doc/Home.md)
 This library available on NuGet is designed to facilitate programming with the async and await keywords, offering a variety of tools and utilities to manage asynchronous operations more effectively. This includes helper classes that provide functionality such as allowing `await` on lock(), provide a class to `await` a lazy load and much more. It is worth checking out if you have some slightly more advanced use-cases for async programming.
+
 
 ## General Notes on Async
 
@@ -40,6 +45,7 @@ This library available on NuGet is designed to facilitate programming with the a
 
 - **SynchronizationContext deadlock scenarios**: As mentioned [here](https://github.com/davidfowl/AspNetCoreDiagnosticScenarios/blob/master/AsyncGuidance.md#warning-deadlocks), there are certain environments where you will run into a deadlock in scenarios such as `Task.Result` and `Task.Wait`. These environments manage their own SyncronizationContext. These include (but are not limited to) non-core ASP.NET, WPF and Windows Forms.
 
+
 ## Best Practice / Takeaways 
 
 - **async void**: As mentioned [here](https://github.com/davidfowl/AspNetCoreDiagnosticScenarios/blob/master/AsyncGuidance.md#async-void), `async void` functions should never be created. The only time they _might_ be used is for 'fire and forget' code. They crash the process if an exception is thrown in them.
@@ -48,10 +54,38 @@ This library available on NuGet is designed to facilitate programming with the a
 
 - **calling async code from sync code**: Calling async code from syncronous code is tricky and dependent on the situation. The main best practice to follow is to simply not do this and go full async down the whole stack. If you need to do this, though, the secondary thing is that *you should never use `Task.Result` or `Task.Wait`* because it poses the most problems and because of the risk of a deadlock. Good resources to look at is from the ['async bible'](https://github.com/davidfowl/AspNetCoreDiagnosticScenarios/blob/master/AsyncGuidance.md#avoid-using-taskresult-and-taskwait), learning about [ConfigureAwait(false)](https://devblogs.microsoft.com/dotnet/configureawait-faq/) and the 'hacks' mentioned and starting [in this article](https://learn.microsoft.com/en-us/archive/msdn-magazine/2015/july/async-programming-brownfield-async-development#the-blocking-hack). Generally, if you need to call an async function from sync code:
   - Use `.GetAwaiter().GetResult()` if you are sure that all async calls in the async function all the way down the stack are configured with `ConfigureAwait(false)`, including all used Microsoft or third party library calls. Alternatively, you can use this if you are *very sure* that any calling code will not have a `SynchronizationContext` that causes deadlocks. If any of the functions are missing the ConfigureAwait then a deadlock can still occur in certain app environments/scenarios mentioned in [SynchronizationContext deadlock scenarios](#general-notes-on-async). Note that `.GetAwaiter().GetResult()` is almost equivalent to simply `.Result` except that `.Result` has worse exception handling because it will throw an AggregateException wrapping the original exception.
-  - Use `Task.Run(() => AsyncFunction()).GetAwaiter().GetResult()` if you are unsure of or if the async function you are calling does not implement `ConfigureAwait(false)` for every single `await`ed call all the way down the stack. Any exceptions thrown in `AsyncFunction()` will be thrown normally and not as an aggregate exception. This way is also worth considering using if you are calling async code from syncronous code high up in a complicated application with much logic below it. This is especially true if the code below it is changing often, there are a number of developers maintaining the code below, and/or the application is an existing [brownfield](https://synoptek.com/insights/it-blogs/greenfield-vs-brownfield-software-development/) application that is early in the process of introducing async. Instead of doing sync to async higher up though, you might want to consider [vertical partitions as described here](https://learn.microsoft.com/en-us/archive/msdn-magazine/2015/july/async-programming-brownfield-async-development#vertical-partitions).
+  - Use `Task.Run(() => AsyncFunction()).GetAwaiter().GetResult()` if you are unsure of or if the async function you are calling does not implement `ConfigureAwait(false)` for every single `await`ed call all the way down the stack. Any exceptions thrown in `AsyncFunction()` will be thrown normally and not as an aggregate exception. The biggest downside to using this method is that if something in the `AsyncFunction()` is `await`ed, both the calling thread and the thread pool thread will be blocked, thus using 2 threads. This might not be wanted behavior in an application that could have many threads and leave to thread-starvation faster. This way is also worth considering using if you are calling async code from syncronous code high up in a complicated application with much logic below it. This is especially true if the code below it is changing often, there are a number of developers maintaining the code below, and/or the application is an existing [brownfield](https://synoptek.com/insights/it-blogs/greenfield-vs-brownfield-software-development/) application that is early in the process of introducing async. Instead of doing sync to async higher up though, you might want to consider [vertical partitions as described here](https://learn.microsoft.com/en-us/archive/msdn-magazine/2015/july/async-programming-brownfield-async-development#vertical-partitions).
   - Use the [flag argument hack](https://learn.microsoft.com/en-us/archive/msdn-magazine/2015/july/async-programming-brownfield-async-development#the-flag-argument-hack) if you are in low-level code that has both a sync and async implementations you can use such as `WebClient.DownloadString`. Doing this method provides your services with both a sync and async implementation while still preventing deadlocking and reusing code through the private function.
 
 - **`ConfigureAwait(false)` with `GetResult()`**: As explained in the referenced [ConfigureAwait(false)](https://devblogs.microsoft.com/dotnet/configureawait-faq/) article, the `ConfigureAwait(false)` in `task.ConfigureAwait(false).GetAwaiter().GetResult()` does nothing and can/should be removed.
+
+- [`Task.FromResult` over `Task.Run` for sync-loaded data](https://github.com/davidfowl/AspNetCoreDiagnosticScenarios/blob/master/AsyncGuidance.md#prefer-taskfromresult-over-taskrun-for-pre-computed-or-trivially-computed-data): Use `Task.FromResult` over `Task.Run` if you have data that is already completed. This wastes a thread on the thread pool.
+
+- **Long-running background work**: As explained in the ['Async Bible'](https://github.com/davidfowl/AspNetCoreDiagnosticScenarios/blob/master/AsyncGuidance.md#avoid-using-taskrun-for-long-running-work-that-blocks-the-thread), long-running background tasks should be created either by manually creating a `Thread` or by calling `Task.Factory.StartNew` with the `TaskCreationOptions.LongRunning` flag. This prevents the long-running task to not take up a spot on the thread pool. Example of `Task.Factory.StartNew` below with async capability:
+```C#
+public Task? BackgroundTask { get; private set; } = null;
+
+public async Task StartAsync(CancellationToken cancellationToken)
+{
+    if (BackgroundTask != null) throw new Exception("Background task is already running");
+
+    BackgroundTask = Task.Factory.StartNew(_ => BackgroundProcessAsync(cancellationToken), TaskCreationOptions.LongRunning, cancellationToken).Unwrap(); // gets unwrapped background process task
+}
+
+private async Task BackgroundProcessAsync(CancellationToken cancellationToken)
+{
+    while (!cancellationToken.IsCancellationRequested) {
+        // some processing
+        await _service.DoSomethingAsync();
+
+        await Task.Delay(500, cancellationToken);
+    }
+}
+
+// Example of waiting on the background task to finish, if ever necessary
+await Task.WhenAll(new List<Task>() { BackgroundTask });
+```
+
 
 ## ExecutionContext and SynchronizationContext
 
